@@ -74,8 +74,8 @@ class OverlayService : Service(), DisplayManager.DisplayListener,
                     var src = Src.FAIL
                     try {
                         when {
-                            !ShizukuSource.isReady() -> src = Src.DENIED
-                            !ShizukuSource.isBound() -> src = Src.BINDING
+                            !ShizukuSource.isReady -> src = Src.DENIED
+                            !ShizukuSource.isBound -> src = Src.BINDING
                             else -> {
                                 val raw = ShizukuSource.readLatency()
                                 when {
