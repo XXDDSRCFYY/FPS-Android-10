@@ -30,9 +30,10 @@
         </service>
 
         <service
-            android:name=".FpsShizukuService"
-            android:exported="true"
-            android:permission="moe.shizuku.manager.permission.API_V23" />
+    android:name=".FpsShizukuService"
+    android:exported="true"
+    android:process=":shizuku_fps"
+    android:permission="moe.shizuku.manager.permission.API_V23" />
 
         <provider
             android:name="rikka.shizuku.ShizukuProvider"
