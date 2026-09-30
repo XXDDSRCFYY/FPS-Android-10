@@ -140,13 +140,6 @@ override fun onResume() {
 
     private fun requestShizukuPermission() {
         FpsStore.hasReqShizuku = true
-        try {
-            Shizuku.requestPermission(shizukuReq)
-        } catch (e: Exception) {
-            FpsStore.hasReqShizuku = false
-            toast("Shizuku 未就绪，请先激活")
-        }
-    }
 
     private fun startOverlay() {
         if (OverlayService.isRunning) return
