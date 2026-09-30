@@ -99,8 +99,10 @@ class OverlayService : Service(), DisplayManager.DisplayListener,
     e.printStackTrace()
 } finally {
     sampling.set(false)
+}
+                    main.post { render(buildText(fps, jank, src)) }
                     }
-                    } catch (e: Exception) {
+                    catch (e: Exception) {
                         e.printStackTrace()
                     } finally {
                         sampling.set(false)
