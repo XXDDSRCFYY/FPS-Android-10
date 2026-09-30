@@ -74,24 +74,27 @@ class OverlayService : Service(), DisplayManager.DisplayListener,
                     var src = Src.FAIL
                     try {
                         when {
-                            !ShizukuSource.isBound -> src = Src.BINDING
-                            else -> {
-                                val raw = ShizukuSource.readLatency()
-                                when {
-                                    raw.isNullOrBlank() -> src = Src.FAIL
-                                    else -> {
-                                        val st = FpsEngine.parseLatency(raw)
-                                        if (st.isEmpty()) {
-                                            src = Src.EMPTY
-                                        } else {
-                                            fps = FpsEngine.fpsOf(st).roundToInt()
-                                            jank = FpsEngine.jankOf(st, hz)
-                                            src = Src.OK
-                                        }
-                                    }
-                                }
-                            }
-                        }
+    !ShizukuSource.isBound -> {
+        src = Src.BINDING
+        ShizukuSource.bind(applicationContext)
+    }
+    else -> {
+        val raw = ShizukuSource.readLatency()
+        when {
+            raw.isNullOrBlank() -> src = Src.FAIL
+            else -> {
+                val st = FpsEngine.parseLatency(raw)
+                if (st.isEmpty()) {
+                    src = Src.EMPTY
+                } else {
+                    fps = FpsEngine.fpsOf(st).roundToInt()
+                    jank = FpsEngine.jankOf(st, hz)
+                    src = Src.OK
+                }
+            }
+        }
+    }
+}
                     } catch (e: Exception) {
                         e.printStackTrace()
                     } finally {
