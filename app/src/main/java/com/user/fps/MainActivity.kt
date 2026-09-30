@@ -64,11 +64,8 @@ class MainActivity : AppCompatActivity() {
                 try {
                     when {
     ShizukuSource.isReady() -> toast("Shizuku 已授权 ✅")
-    !FpsStore.hasReqShizuku -> requestShizukuPermission()
-    Shizuku.shouldShowRequestPermissionRationale() ->
-        toast("Shizuku 权限未授予，请前往 Shizuku 应用手动允许本应用")
-    else -> requestShizukuPermission()
-                    }
+    else -> toast("请前往 Shizuku 应用手动授权本应用")
+}
                 } catch (e: Exception) {
                     toast("Shizuku 未就绪，请先激活")
                 }
