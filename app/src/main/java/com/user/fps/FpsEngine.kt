@@ -24,7 +24,7 @@ object FpsEngine {
     fun jankOf(stamps: LongArray, hz: Float): Int {
         if (hz <= 0f || stamps.size < 2) return 0
         val budget = NS_PER_S / hz
-        val deltas = stamps.zipWithNext { a, b -> b - a }
+        val deltas = stamps.toList().zipWithNext { a, b -> b - a }
         return deltas.count { it > budget * 1.5f } * 100 / deltas.size
     }
 }
