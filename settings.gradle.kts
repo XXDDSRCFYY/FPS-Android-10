@@ -8,3 +8,4 @@ pluginManagement {
 
 // Give your project a name; this must match your folder name or your app’s ID
 rootProject.name = "FPS-Android-10"
+include(":app")
