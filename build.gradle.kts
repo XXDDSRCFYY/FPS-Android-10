@@ -1,50 +1,31 @@
 plugins {
     id("com.android.application")
-    kotlin("android")
+    id("org.jetbrains.kotlin.android")
 }
 
 android {
-    compileSdk = 33
+    namespace = "com.user.fps"
+    compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.example.myapp"
-        minSdk = 21
-        targetSdk = 33
-        versionCode = 1
-        versionName = "1.0"
+        applicationId = "com.user.fps"
+        minSdk = 29
+        targetSdk = 35
+        versionCode = 4
+        versionName = "2.7"
     }
 
-    buildTypes {
-        getByName("release") {
-            isMinifyEnabled = false
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
-        }
+    buildFeatures { aidl = true }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
-}
-
-repositories {
-    google()
-    mavenCentral()
+    kotlinOptions { jvmTarget = "17" }
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.9.0")
-    implementation("androidx.appcompat:appcompat:1.6.1")
-    implementation("com.google.android.material:material:1.8.0")
-    implementation("androidx.constraintlayout:constraintlayout:2.1.4")
-
-    // CameraX
-    val cameraXVersion = "1.1.0"
-    implementation("androidx.camera:camera-core:$cameraXVersion")
-    implementation("androidx.camera:camera-camera2:$cameraXVersion")
-    implementation("androidx.camera:camera-lifecycle:$cameraXVersion")
-    implementation("androidx.camera:camera-view:1.0.0-alpha32")
-
-    // OpenCV (if imported as module)
-    implementation(project(":openCVLibrary"))
-    // Or from Maven Central:
-    // implementation("org.opencv:opencv-android:4.5.5")
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
 }
