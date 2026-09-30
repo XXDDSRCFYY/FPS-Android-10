@@ -48,16 +48,16 @@ object ShizukuSource {
     val isBound: Boolean get() = connected.get()
 
     fun bind(ctx: Context) {
-        if (connected.get()) return
-        if (bindRequested.get()) return
-        bindRequested.set(true)
-        try {
-            Shizuku.bindUserService(args(ctx.applicationContext), conn)
-            Log.i(TAG, "bindUserService called")
-        } catch (e: Exception) {
-            bindRequested.set(false)
-            Log.e(TAG, "bindUserService failed", e)
-        }
+    if (connected.get()) return
+    if (!Shizuku.pingBinder()) return
+    bindRequested.set(true)
+    try {
+        Shizuku.bindUserService(args(ctx.applicationContext), conn)
+        Log.i(TAG, "bindUserService called")
+    } catch (e: Exception) {
+        bindRequested.set(false)
+        Log.e(TAG, "bindUserService failed", e)
+    }
     }
 
     fun unbind(ctx: Context) {
