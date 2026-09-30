@@ -21,7 +21,7 @@ object ShizukuSource {
 
     private fun args(ctx: Context) = Shizuku.UserServiceArgs(
         ComponentName(ctx, FpsShizukuService::class.java)
-    ).processNameSuffix("fps").version(1).debuggable(false)
+    ).processNameSuffix("fps").version(2).debuggable(false)
 
     private val conn = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, binder: IBinder) {
