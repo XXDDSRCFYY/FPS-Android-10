@@ -110,7 +110,6 @@ class OverlayService : Service(), DisplayManager.DisplayListener,
             main.postAtTime(this, next)
         }
     }
-
     private fun buildText(fps: Int, jank: Int, src: Src): String {
         val lines = mutableListOf<String>()
         lines += when {
@@ -140,4 +139,153 @@ class OverlayService : Service(), DisplayManager.DisplayListener,
         FpsStore.init(applicationContext)
         FpsStore.register(this)
         reloadCfg()
-        val dm = getSystemService
+        val dm = getSystemService(DISPLAY_SERVICE) as DisplayManager
+        hz = dm.getDisplay(Display.DEFAULT_DISPLAY).refreshRate
+        dm.registerDisplayListener(this, main)
+        ShizukuSource.bind(applicationContext)
+        addOverlay()
+        main.post(tickRunnable)
+        }
+
+    override fun onStartCommand(i: Intent?, f: Int, s: Int): Int = START_STICKY
+
+    override fun onBind(i: Intent?): IBinder? = null
+
+    private fun addOverlay() {
+        if (!Settings.canDrawOverlays(this)) {
+            stopSelf()
+            return
+        }
+        wm = getSystemService(WINDOW_SERVICE) as WindowManager
+        val view = TextView(applicationContext).apply {
+            gravity = Gravity.CENTER
+            setPadding(28, 12, 28, 12)
+            background = GradientDrawable()
+            setOnTouchListener { v, e ->
+                val p = lp ?: return@setOnTouchListener true
+                when (e.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        tx = p.x - e.rawX
+                        ty = p.y - e.rawY
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        p.x = (e.rawX + tx).toInt()
+                        p.y = (e.rawY + ty).toInt()
+                        wm.updateViewLayout(v, p)
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        FpsStore.posX = p.x
+                        FpsStore.posY = p.y
+                    }
+                }
+                true
+            }
+        }
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = FpsStore.posX
+            y = FpsStore.posY
+        }
+        try {
+            wm.addView(view, params)
+            tv = view
+            lp = params
+            applyStyle()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Toast.makeText(applicationContext,
+                "悬浮窗创建失败，请检查权限", Toast.LENGTH_SHORT).show()
+            stopSelf()
+            }
+    }
+
+    private fun applyStyle() {
+        tv?.let {
+            it.textSize = FpsStore.textSize
+            it.setTextColor(FpsStore.textColor)
+            it.background = GradientDrawable().apply {
+                setColor(FpsStore.bgColor)
+                cornerRadius = FpsStore.cornerRadius
+            }
+        }
+    }
+
+    override fun onSharedPreferenceChanged(sp: SharedPreferences?, key: String?) {
+        when (key) {
+            "text", "tcolor", "bcolor", "radius" -> main.post { applyStyle() }
+            "jank", "hz" -> reloadCfg()
+            "interval" -> {
+                reloadCfg()
+                nextTickAt = 0L
+                main.post(tickRunnable)
+            }
+            "demo" -> {
+                reloadCfg()
+                main.post(tickRunnable)
+            }
+        }
+    }
+
+    private fun startFgs() {
+        val ch = NotificationChannel(
+            "fps", "帧率服务", NotificationManager.IMPORTANCE_MIN
+        )
+        (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
+            .createNotificationChannel(ch)
+        val n = NotificationCompat.Builder(this, "fps")
+            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setContentTitle("FPS Monitor 运行中")
+            .build()
+        if (Build.VERSION.SDK_INT >= 34)
+            startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        else
+            startForeground(1, n)
+    }
+
+    override fun onDisplayChanged(displayId: Int) {
+        if (displayId == Display.DEFAULT_DISPLAY) {
+            hz = (getSystemService(DISPLAY_SERVICE) as DisplayManager)
+                .getDisplay(Display.DEFAULT_DISPLAY).refreshRate
+        }
+    }
+
+    override fun onDisplayAdded(displayId: Int) {}
+
+    override fun onDisplayRemoved(displayId: Int) {}
+
+    override fun onDestroy() {
+        try {
+            main.removeCallbacksAndMessages(null)
+            exec.shutdownNow()
+            FpsStore.unregister(this)
+            (getSystemService(DISPLAY_SERVICE) as DisplayManager)
+                .unregisterDisplayListener(this)
+            ShizukuSource.unbind(applicationContext)
+            tv?.let { view ->
+                try {
+                    wm.removeView(view)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+            try {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        } finally {
+            isRunning = false
+            tv = null
+            lp = null
+        }
+        super.onDestroy()
+    }
+}
