@@ -63,12 +63,11 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener {
                 try {
                     when {
-                        !Shizuku.pingBinder() -> toast("请先安装并激活 Shizuku")
-                        ShizukuSource.isReady() -> toast("Shizuku 已授权 ✅")
-                        !FpsStore.hasReqShizuku -> requestShizukuPermission()
-                        Shizuku.shouldShowRequestPermissionRationale() ->
-                            toast("Shizuku 权限未授予，请前往 Shizuku 应用手动允许本应用")
-                        else -> requestShizukuPermission()
+    ShizukuSource.isReady() -> toast("Shizuku 已授权 ✅")
+    !FpsStore.hasReqShizuku -> requestShizukuPermission()
+    Shizuku.shouldShowRequestPermissionRationale() ->
+        toast("Shizuku 权限未授予，请前往 Shizuku 应用手动允许本应用")
+    else -> requestShizukuPermission()
                     }
                 } catch (e: Exception) {
                     toast("Shizuku 未就绪，请先激活")
