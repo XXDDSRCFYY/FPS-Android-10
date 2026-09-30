@@ -49,7 +49,6 @@ object ShizukuSource {
 
     fun bind(ctx: Context) {
     if (connected.get()) return
-    if (!Shizuku.pingBinder()) return
     bindRequested.set(true)
     try {
         Shizuku.bindUserService(args(ctx.applicationContext), conn)
