@@ -230,7 +230,7 @@ override fun onResume() {
         val tv = TextView(this).apply { text = "$label：${fmt(init)}"; textSize = 14f }
         b.addView(tv)
         b.addView(SeekBar(this).apply {
-            max = max - min
+            this.max = max - min
             progress = init - min
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(s: SeekBar?, p: Int, fromUser: Boolean) {
