@@ -1,11 +1,17 @@
 pluginManagement {
-  repositories {
-    google()
-    mavenCentral()
-    gradlePluginPortal()
-  }
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
 }
 
-// Give your project a name; this must match your folder name or your app’s ID
-rootProject.name = "FPS-Android-10"
+rootProject.name = "FPS-Android-10-"
 include(":app")
