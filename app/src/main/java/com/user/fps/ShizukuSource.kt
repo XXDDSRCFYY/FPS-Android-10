@@ -43,9 +43,7 @@ object ShizukuSource {
 
     fun isReady(): Boolean = try {
     Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
-} catch (e: Exception) {
-    false
-}
+} catch (e: Exception) { false }
 
     val isBound: Boolean get() = connected.get()
 
