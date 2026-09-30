@@ -56,22 +56,18 @@ class MainActivity : AppCompatActivity() {
             textSize = 14f
             setPadding(0, 24, 0, 24)
         }
-        box.addView(status)
-
         box.addView(Button(this).apply {
-            text = "授权 Shizuku（免 root）"
-            setOnClickListener {
-                try {
-                    when {
-    ShizukuSource.isReady() -> toast("Shizuku 已授权 ✅")
-    else -> toast("请前往 Shizuku 应用手动授权本应用")
-}
-                } catch (e: Exception) {
-                    toast("Shizuku 未就绪，请先激活")
-                }
-                refreshStatus()
-            }
-        })
+    text = "Authorize Shizuku"
+    setOnClickListener {
+        try {
+            ShizukuSource.isReady()
+            requestShizukuPermission()
+        } catch (e: Exception) {
+            toast("Shizuku error")
+        }
+        refreshStatus()
+    }
+})
             btnStart = Button(this).apply {
         text = "启动悬浮帧率"
         setOnClickListener {
