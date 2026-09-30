@@ -56,20 +56,21 @@ class MainActivity : AppCompatActivity() {
             textSize = 14f
             setPadding(0, 24, 0, 24)
         }
+        box.addView(status)
+
         box.addView(Button(this).apply {
-    text = "Authorize Shizuku"
-    setOnClickListener {
-        try {
-            ShizukuSource.isReady()
-            requestShizukuPermission()
-        } catch (e: Exception) {
-            toast("Shizuku error")
-        }
-        refreshStatus()
-    }
-})
+            text = "Authorize Shizuku"
+            setOnClickListener {
+                try {
+                    requestShizukuPermission()
+                } catch (e: Exception) {
+                    toast("Shizuku error")
+                }
+                refreshStatus()
+            }
+        })
             btnStart = Button(this).apply {
-        text = "启动悬浮帧率"
+        text = "Start"
         setOnClickListener {
             when {
                 OverlayService.isRunning -> {
@@ -90,7 +91,7 @@ class MainActivity : AppCompatActivity() {
                         Uri.parse("package:$packageName")))
                 }
                 else -> {
-                    toast("正在启动悬浮帧率…")
+                    toast("Starting...")
                     startOverlay()
                 }
             }
@@ -98,30 +99,30 @@ class MainActivity : AppCompatActivity() {
     }
     box.addView(btnStart)
 
-    header(box, "──── 悬浮窗自定义 ────")
-    slider(box, "字体大小", 10, 32, FpsStore.textSize.toInt(), { "$it sp" })
+    header(box, "===== Custom =====")
+    slider(box, "Font size", 10, 32, FpsStore.textSize.toInt(), { "$it sp" })
         { FpsStore.textSize = it.toFloat() }
-    slider(box, "背景不透明度", 0, 255, FpsStore.bgColor ushr 24, { "$it / 255" })
+    slider(box, "Bg alpha", 0, 255, FpsStore.bgColor ushr 24, { "$it / 255" })
         { FpsStore.bgColor = (FpsStore.bgColor and 0xFFFFFF) or (it shl 24) }
-    slider(box, "背景圆角", 0, 80, FpsStore.cornerRadius.toInt(), { "$it px" })
+    slider(box, "Corner", 0, 80, FpsStore.cornerRadius.toInt(), { "$it px" })
         { FpsStore.cornerRadius = it.toFloat() }
-    slider(box, "刷新间隔", 500, 2000,
+    slider(box, "Interval", 500, 2000,
         FpsStore.intervalMs.toInt().coerceIn(500, 2000), { "$it ms" })
         { FpsStore.intervalMs = it.toLong() }
 
-    switchRow(box, "显示掉帧率", FpsStore.showJank) { FpsStore.showJank = it }
-    switchRow(box, "显示屏幕刷新率", FpsStore.showHz) { FpsStore.showHz = it }
-    switchRow(box, "演示模式（模拟数据，无需 Shizuku）", FpsStore.demo) { FpsStore.demo = it }
+    switchRow(box, "Show jank", FpsStore.showJank) { FpsStore.showJank = it }
+    switchRow(box, "Show Hz", FpsStore.showHz) { FpsStore.showHz = it }
+    switchRow(box, "Demo mode", FpsStore.demo) { FpsStore.demo = it }
 
-    header(box, "文字颜色")
+    header(box, "Text color")
     colorRow(box, listOf(
-        "白" to 0xFFFFFFFFL, "黑" to 0xFF111111L, "黄" to 0xFFFFD600L,
-        "青" to 0xFF00E5FFL, "粉" to 0xFFFF4081L, "绿" to 0xFF76FF03L
+        "W" to 0xFFFFFFFFL, "K" to 0xFF111111L, "Y" to 0xFFFFD600L,
+        "C" to 0xFF00E5FFL, "P" to 0xFFFF4081L, "G" to 0xFF76FF03L
     )) { FpsStore.textColor = it.toInt() }
-    header(box, "背景颜色")
+    header(box, "Bg color")
     colorRow(box, listOf(
-        "黑90%" to 0xE6000000L, "黑60%" to 0x99000000L, "黑30%" to 0x4D000000L,
-        "白60%" to 0x99FFFFFFL, "蓝80%" to 0xCC1565C0L, "无" to 0x00000000L
+        "K90" to 0xE6000000L, "K60" to 0x99000000L, "K30" to 0x4D000000L,
+        "W60" to 0x99FFFFFFL, "B80" to 0xCC1565C0L, "N" to 0x00000000L
     )) { FpsStore.bgColor = it.toInt() }
 
     refreshStatus()
@@ -132,37 +133,39 @@ override fun onResume() {
     maybeAutoStart()
     refreshStatus()
 }
-    override fun onDestroy() {
-        Shizuku.removeRequestPermissionResultListener(shizukuListener)
-        uiHandler.removeCallbacksAndMessages(null)
-        super.onDestroy()
+
+override fun onDestroy() {
+    Shizuku.removeRequestPermissionResultListener(shizukuListener)
+    uiHandler.removeCallbacksAndMessages(null)
+    super.onDestroy()
+}
+
+private fun requestShizukuPermission() {
+    FpsStore.hasReqShizuku = true
+    // Do not call requestPermission; already authorized manually in Shizuku.
+}
+
+private fun startOverlay() {
+    if (OverlayService.isRunning) return
+    try {
+        ShizukuSource.bind(applicationContext)
+        startForegroundService(Intent(this, OverlayService::class.java))
+        pollStatus { toast("Running") }
+    } catch (e: Exception) {
+        if (e.javaClass.name.contains("ForegroundServiceStartNotAllowed"))
+            toast("App not in foreground")
+        else
+            toast("Start failed: ${e.message}")
     }
-
-    private fun requestShizukuPermission() {
-        FpsStore.hasReqShizuku = true
-
-    private fun startOverlay() {
-        if (OverlayService.isRunning) return
-        try {
-            ShizukuSource.bind(applicationContext)
-            startForegroundService(Intent(this, OverlayService::class.java))
-            pollStatus { toast("悬浮帧率已运行 ✅") }
-        } catch (e: Exception) {
-            if (e.javaClass.name.contains("ForegroundServiceStartNotAllowed"))
-                toast("应用不在前台，请回到 App 后再试")
-            else
-                toast("启动失败：${e.message}")
-        }
-    }
-
+}
     private fun maybeAutoStart() {
         if (!pendingOverlayGrant) return
         pendingOverlayGrant = false
         if (Settings.canDrawOverlays(this) && !OverlayService.isRunning) {
-            toast("悬浮窗权限已授予，正在启动悬浮帧率…")
+            toast("Starting...")
             startOverlay()
         } else if (!Settings.canDrawOverlays(this)) {
-            toast("尚未授予悬浮窗权限，可再次点击「启动悬浮帧率」")
+            toast("Overlay permission required")
         }
     }
 
@@ -186,7 +189,6 @@ override fun onResume() {
             return
         }
         if (retries <= 0) {
-            Log.w(TAG, "pollStopped timeout, onDestroy not called, force reset isRunning")
             OverlayService.isRunning = false
             btnStart.isEnabled = true
             refreshStatus()
@@ -196,11 +198,10 @@ override fun onResume() {
     }
 
     private fun refreshStatus() {
-        status.text = "悬浮窗权限：" + (if (Settings.canDrawOverlays(this)) "✅" else "❌") +
-            "\nShizuku：" + (if (ShizukuSource.isReady()) "✅ 已授权" else "❌ 未授权") +
-            "\n服务状态：" + (if (OverlayService.isRunning) "🟢 运行中" else "⚪ 已停止") +
-            "\n架构支持：" + Build.SUPPORTED_ABIS.take(2).joinToString(" / ")
-        btnStart.text = if (OverlayService.isRunning) "停止悬浮帧率" else "启动悬浮帧率"
+        status.text = "Overlay: " + (if (Settings.canDrawOverlays(this)) "OK" else "NO") +
+            "\nShizuku: " + (if (ShizukuSource.isBound) "OK" else "NO") +
+            "\nService: " + (if (OverlayService.isRunning) "RUNNING" else "STOPPED")
+        btnStart.text = if (OverlayService.isRunning) "Stop" else "Start"
     }
 
     private fun header(b: LinearLayout, t: String) =
@@ -212,7 +213,7 @@ override fun onResume() {
 
     private fun slider(b: LinearLayout, label: String, min: Int, max: Int,
                        init: Int, fmt: (Int) -> String, on: (Int) -> Unit) {
-        val tv = TextView(this).apply { text = "$label：${fmt(init)}"; textSize = 14f }
+        val tv = TextView(this).apply { text = "$label: ${fmt(init)}"; textSize = 14f }
         b.addView(tv)
         b.addView(SeekBar(this).apply {
             this.max = max - min
@@ -221,7 +222,7 @@ override fun onResume() {
                 override fun onProgressChanged(s: SeekBar?, p: Int, fromUser: Boolean) {
                     if (!fromUser) return
                     val v = p + min
-                    tv.text = "$label：${fmt(v)}"
+                    tv.text = "$label: ${fmt(v)}"
                     on(v)
                 }
                 override fun onStartTrackingTouch(s: SeekBar?) {}
