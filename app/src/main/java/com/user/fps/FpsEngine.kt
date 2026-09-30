@@ -10,7 +10,7 @@ object FpsEngine {
             if (cols.size >= 2)
                 cols[1].toLongOrNull()?.takeIf { it in 1 until Long.MAX_VALUE }
             else null
-        }.toLongArray()
+        }.toList().toLongArray()
 
     fun fpsOf(stamps: LongArray): Float {
         if (stamps.size < 2) return 0f
