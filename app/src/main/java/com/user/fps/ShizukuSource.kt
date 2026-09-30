@@ -48,7 +48,6 @@ object ShizukuSource {
     val isBound: Boolean get() = connected.get()
 
     fun bind(ctx: Context) {
-        if (!isReady()) return
         if (!bindRequested.compareAndSet(false, true)) return
         try {
             Shizuku.bindUserService(args(ctx.applicationContext), conn)
