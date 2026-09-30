@@ -1,292 +1,319 @@
-*package com.user.fps
+package com.user.fps
 
-import android.app.*
 import android.content.Intent
-import android.content.SharedPreferences
-import android.content.pm.ServiceInfo
-import android.graphics.PixelFormat
+import android.graphics.Color
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
-import android.hardware.display.DisplayManager
-import android.os.*
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
-import android.view.*
-import android.widget.TextView
-import android.widget.Toast
-import androidx.core.app.NotificationCompat
-import java.util.concurrent.Executors
-import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.math.cos
-import kotlin.math.roundToInt
-import kotlin.math.sin
+import android.util.Log
+import android.view.Gravity
+import android.view.ViewGroup
+import android.widget.*
+import androidx.appcompat.app.AppCompatActivity
+import rikka.shizuku.Shizuku
 
-class OverlayService : Service(), DisplayManager.DisplayListener,
-    SharedPreferences.OnSharedPreferenceChangeListener {
+class MainActivity : AppCompatActivity() {
 
-    companion object {
-        var isRunning = false
+    private val TAG = "MainActivity"
+    private val shizukuReq = 1002
+    private val uiHandler = Handler(Looper.getMainLooper())
+
+    private lateinit var status: TextView
+    private lateinit var btnStart: Button
+    private var pendingOverlayGrant = false
+
+    private val shizukuListener = Shizuku.OnRequestPermissionResultListener { req, _ ->
+        if (req == shizukuReq) {
+            FpsStore.hasReqShizuku = true
+            refreshStatus()
+        }
     }
 
-    private enum class Src { DEMO, OK, EMPTY, DENIED, BINDING, FAIL }
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        FpsStore.init(this)
+        Shizuku.addRequestPermissionResultListener(shizukuListener)
 
-    private data class Cfg(
-        val demo: Boolean,
-        val showJank: Boolean,
-        val showHz: Boolean,
-        val intervalMs: Long
-    )
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 64, 48, 48)
+        }
+        setContentView(ScrollView(this).apply { addView(box) })
 
-    @Volatile
-    private var cfg = Cfg(false, true, false, FpsStore.MIN_INTERVAL_MS)
+        box.addView(TextView(this).apply {
+            text = "FPS Monitor"
+            textSize = 30f
+            setTypeface(typeface, Typeface.BOLD)
+        })
 
-    private val main = Handler(Looper.getMainLooper())
-    private val exec = Executors.newSingleThreadExecutor()
-    private val sampling = AtomicBoolean(false)
-    private lateinit var wm: WindowManager
-    private var tv: TextView? = null
-    private var lp: WindowManager.LayoutParams? = null
-    private var hz = 60f
-    private var tx = 0f
-    private var ty = 0f
-    private var nextTickAt = 0L
+        status = TextView(this).apply {
+            textSize = 14f
+            setPadding(0, 24, 0, 24)
+        }
+        box.addView(status)
 
-    private fun reloadCfg() {
-        cfg = Cfg(
-            FpsStore.demo, FpsStore.showJank, FpsStore.showHz,
-            maxOf(FpsStore.intervalMs, FpsStore.MIN_INTERVAL_MS)
-        )
-    }
+        box.addView(Button(this).apply {
+            text = "授权 Shizuku（免 root）"
+            setOnClickListener {
+                try {
+                    when {
+                        !Shizuku.pingBinder() -> toast("请先安装并激活 Shizuku")
+                        ShizukuSource.isReady() -> toast("Shizuku 已授权 ✅")
+                        !FpsStore.hasReqShizuku -> requestShizukuPermission()
+                        Shizuku.shouldShowRequestPermissionRationale() ->
+                            toast("Shizuku 权限未授予，请前往 Shizuku 应用手动允许本应用")
+                        else -> requestShizukuPermission()
+                    }
+                } catch (e: Exception) {
+                    toast("Shizuku 未就绪，请先激活")
+                }
+                refreshStatus()
+            }
+        })
 
-    private val tickRunnable = object : Runnable {
-        override fun run() {
-            if (cfg.demo) {
-                val t = System.nanoTime() / 3e9
-                render(
-                    buildText(
-                        (60f + 12f * sin(t).toFloat()).roundToInt(),
-                        (8f * (1f - cos(t)) / 2f).toInt(),
-                        Src.DEMO
-                    )
-                )
-            } else if (sampling.compareAndSet(false, true)) {
-                exec.execute {
-                    var fps = -1
-                    var jank = -1
-                    var src = Src.FAIL
-                    try {
-                        when {
-                            !ShizukuSource.isReady() -> src = Src.DENIED
-                            !ShizukuSource.isBound() -> src = Src.BINDING
-                            else -> {
-                                val raw = ShizukuSource.readLatency()
-                                when {
-                                    raw.isNullOrBlank() -> src = Src.FAIL
-                                    else -> {
-                                        val st = FpsEngine.parseLatency(raw)
-                                        if (st.isEmpty()) {
-                                            src = Src.EMPTY
-                                        } else {
-                                            fps = FpsEngine.fpsOf(st).roundToInt()
-                                            jank = FpsEngine.jankOf(st, hz)
-                                            src = Src.OK
-                                        }
-                                    }
-                                }
-                            }
+        btnStart = Button(this).apply {
+            text = "启动悬浮帧率"
+            setOnClickListener {
+                when {
+                    OverlayService.isRunning -> {
+                        val ok = stopService(
+                            Intent(this@MainActivity, OverlayService::class.java)
+                        )
+                        if (!ok) {
+                            Log.w(TAG, "stopService=false but isRunning=true, force reset")
+                            OverlayService.isRunning = false
+                            refreshStatus()
+                        } else {
+                            isEnabled = false
+                            pollStopped()
                         }
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    } finally {
-                        sampling.set(false)
                     }
-                    main.post { render(buildText(fps, jank, src)) }
-                }
-            }
-            main.removeCallbacks(this)
-            val interval = cfg.intervalMs
-            val now = SystemClock.uptimeMillis()
-            var next = if (nextTickAt == 0L) now + interval else nextTickAt + interval
-            if (next < now) next = now + interval
-            nextTickAt = next
-            main.postAtTime(this, next)
-        }
-    }
-
-    private fun buildText(fps: Int, jank: Int, src: Src): String {
-        val lines = mutableListOf<String>()
-        lines += when {
-            src == Src.DENIED -> "未授权 Shizuku"
-            fps >= 0 -> "$fps FPS"
-            else -> "-- FPS"
-        }
-        if (cfg.showJank && jank >= 0) lines += "掉帧 $jank%"
-        if (cfg.showHz) lines += "${hz.roundToInt()} Hz"
-        when (src) {
-            Src.BINDING -> lines += "Shizuku 连接中…"
-            Src.EMPTY -> lines += "SurfaceFlinger 无数据"
-            Src.FAIL -> lines += "读取失败，请检查 Shizuku"
-            else -> {}
-        }
-        return lines.joinToString("\n")
-    }
-
-    private fun render(text: String) {
-        tv?.text = text
-    }
-
-    override fun onCreate() {
-        super.onCreate()
-        isRunning = true
-        startFgs()
-        FpsStore.init(applicationContext)
-        FpsStore.register(this)
-        reloadCfg()
-        val dm = getSystemService(DISPLAY_SERVICE) as DisplayManager
-        hz = dm.getDisplay(Display.DEFAULT_DISPLAY).refreshRate
-        dm.registerDisplayListener(this, main)
-        ShizukuSource.bind(applicationContext)
-        addOverlay()
-        main.post(tickRunnable)
-    }
-
-    override fun onStartCommand(i: Intent?, f: Int, s: Int): Int = START_STICKY
-
-    override fun onBind(i: Intent?): IBinder? = null
-
-    private fun addOverlay() {
-        if (!Settings.canDrawOverlays(this)) {
-            stopSelf()
-            return
-        }
-        wm = getSystemService(WINDOW_SERVICE) as WindowManager
-        val view = TextView(applicationContext).apply {
-            gravity = Gravity.CENTER
-            setPadding(28, 12, 28, 12)
-            background = GradientDrawable()
-            setOnTouchListener { v, e ->
-                val p = lp ?: return@setOnTouchListener true
-                when (e.action) {
-                    MotionEvent.ACTION_DOWN -> {
-                        tx = p.x - e.rawX
-                        ty = p.y - e.rawY
+                    !Settings.canDrawOverlays(this@MainActivity) -> {
+                        pendingOverlayGrant = true
+                        startActivity(
+                            Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:$packageName")
+                            )
+                        )
                     }
-                    MotionEvent.ACTION_MOVE -> {
-                        p.x = (e.rawX + tx).toInt()
-                        p.y = (e.rawY + ty).toInt()
-                        wm.updateViewLayout(v, p)
-                    }
-                    MotionEvent.ACTION_UP -> {
-                        FpsStore.posX = p.x
-                        FpsStore.posY = p.y
+                    else -> {
+                        toast("正在启动悬浮帧率…")
+                        startOverlay()
                     }
                 }
-                true
             }
         }
-        val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = FpsStore.posX
-            y = FpsStore.posY
-        }
-        try {
-            wm.addView(view, params)
-            tv = view
-            lp = params
-            applyStyle()
-        } catch (e: Exception) {
-            e.printStackTrace()
-            Toast.makeText(applicationContext,
-                "悬浮窗创建失败，请检查权限", Toast.LENGTH_SHORT).show()
-            stopSelf()
-        }
+        box.addView(btnStart)
+
+        header(box, "──── 悬浮窗自定义 ────")
+        slider(box, "字体大小", 10, 32, FpsStore.textSize.toInt(), { "$it sp" })
+            { FpsStore.textSize = it.toFloat() }
+        slider(box, "背景不透明度", 0, 255, FpsStore.bgColor ushr 24, { "$it / 255" })
+            { FpsStore.bgColor = (FpsStore.bgColor and 0xFFFFFF) or (it shl 24) }
+        slider(box, "背景圆角", 0, 80, FpsStore.cornerRadius.toInt(), { "$it px" })
+            { FpsStore.cornerRadius = it.toFloat() }
+        slider(
+            box, "刷新间隔", 500, 2000,
+            FpsStore.intervalMs.toInt().coerceIn(500, 2000), { "$it ms" }
+        ) { FpsStore.intervalMs = it.toLong() }
+
+        switchRow(box, "显示掉帧率", FpsStore.showJank) { FpsStore.showJank = it }
+        switchRow(box, "显示屏幕刷新率", FpsStore.showHz) { FpsStore.showHz = it }
+        switchRow(box, "演示模式（模拟数据，无需 Shizuku）", FpsStore.demo) { FpsStore.demo = it }
+
+        header(box, "文字颜色")
+        colorRow(
+            box, listOf(
+                "白" to 0xFFFFFFFFL, "黑" to 0xFF111111L, "黄" to 0xFFFFD600L,
+                "青" to 0xFF00E5FFL, "粉" to 0xFFFF4081L, "绿" to 0xFF76FF03L
+            )
+        ) { FpsStore.textColor = it.toInt() }
+        header(box, "背景颜色")
+        colorRow(
+            box, listOf(
+                "黑90%" to 0xE6000000L, "黑60%" to 0x99000000L, "黑30%" to 0x4D000000L,
+                "白60%" to 0x99FFFFFFL, "蓝80%" to 0xCC1565C0L, "无" to 0x00000000L
+            )
+        ) { FpsStore.bgColor = it.toInt() }
+
+        refreshStatus()
     }
 
-    private fun applyStyle() {
-        tv?.let {
-            it.textSize = FpsStore.textSize
-            it.setTextColor(FpsStore.textColor)
-            it.background = GradientDrawable().apply {
-                setColor(FpsStore.bgColor)
-                cornerRadius = FpsStore.cornerRadius
-            }
-        }
+    override fun onResume() {
+        super.onResume()
+        maybeAutoStart()
+        refreshStatus()
     }
-
-    override fun onSharedPreferenceChanged(sp: SharedPreferences?, key: String?) {
-        when (key) {
-            "text", "tcolor", "bcolor", "radius" -> main.post { applyStyle() }
-            "jank", "hz" -> reloadCfg()
-            "interval" -> {
-                reloadCfg()
-                nextTickAt = 0L
-                main.post(tickRunnable)
-            }
-            "demo" -> {
-                reloadCfg()
-                main.post(tickRunnable)
-            }
-        }
-    }
-
-    private fun startFgs() {
-        val ch = NotificationChannel(
-            "fps", "帧率服务", NotificationManager.IMPORTANCE_MIN
-        )
-        (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
-            .createNotificationChannel(ch)
-        val n = NotificationCompat.Builder(this, "fps")
-            .setSmallIcon(android.R.drawable.stat_sys_download)
-            .setContentTitle("FPS Monitor 运行中")
-            .build()
-        if (Build.VERSION.SDK_INT >= 34)
-            startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        else
-            startForeground(1, n)
-    }
-
-    override fun onDisplayChanged(displayId: Int) {
-        if (displayId == Display.DEFAULT_DISPLAY) {
-            hz = (getSystemService(DISPLAY_SERVICE) as DisplayManager)
-                .getDisplay(Display.DEFAULT_DISPLAY).refreshRate
-        }
-    }
-
-    override fun onDisplayAdded(displayId: Int) {}
-
-    override fun onDisplayRemoved(displayId: Int) {}
 
     override fun onDestroy() {
-        try {
-            main.removeCallbacksAndMessages(null)
-            exec.shutdownNow()
-            FpsStore.unregister(this)
-            (getSystemService(DISPLAY_SERVICE) as DisplayManager)
-                .unregisterDisplayListener(this)
-            ShizukuSource.unbind(applicationContext)
-            tv?.let { view ->
-                try {
-                    wm.removeView(view)
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
-            try {
-                stopForeground(STOP_FOREGROUND_REMOVE)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        } finally {
-            isRunning = false
-            tv = null
-            lp = null
-        }
+        Shizuku.removeRequestPermissionResultListener(shizukuListener)
+        uiHandler.removeCallbacksAndMessages(null)
         super.onDestroy()
+        }
+
+    private fun requestShizukuPermission() {
+        FpsStore.hasReqShizuku = true
+        try {
+            Shizuku.requestPermission(shizukuReq)
+        } catch (e: Exception) {
+            FpsStore.hasReqShizuku = false
+            toast("Shizuku 未就绪，请先激活")
+        }
     }
+
+    private fun startOverlay() {
+        if (OverlayService.isRunning) return
+        try {
+            ShizukuSource.bind(applicationContext)
+            startForegroundService(Intent(this, OverlayService::class.java))
+            pollStatus { toast("悬浮帧率已运行 ✅") }
+        } catch (e: Exception) {
+            if (e.javaClass.name.contains("ForegroundServiceStartNotAllowed"))
+                toast("应用不在前台，请回到 App 后再试")
+            else
+                toast("启动失败：${e.message}")
+        }
+    }
+
+    private fun maybeAutoStart() {
+        if (!pendingOverlayGrant) return
+        pendingOverlayGrant = false
+        if (Settings.canDrawOverlays(this) && !OverlayService.isRunning) {
+            toast("悬浮窗权限已授予，正在启动悬浮帧率…")
+            startOverlay()
+        } else if (!Settings.canDrawOverlays(this)) {
+            toast("尚未授予悬浮窗权限，可再次点击「启动悬浮帧率」")
+        }
+    }
+
+    private fun pollStatus(retries: Int = 5, onRunning: (() -> Unit)? = null) {
+        if (OverlayService.isRunning) {
+            onRunning?.invoke()
+            refreshStatus()
+            return
+        }
+        if (retries <= 0) {
+            refreshStatus()
+            return
+        }
+        uiHandler.postDelayed({ pollStatus(retries - 1, onRunning) }, 300)
+    }
+
+    private fun pollStopped(retries: Int = 8) {
+        if (!OverlayService.isRunning) {
+            btnStart.isEnabled = true
+            refreshStatus()
+            return
+            }
+        if (retries <= 0) {
+            refreshStatus()
+            return
+        }
+        uiHandler.postDelayed({ pollStatus(retries - 1, onRunning) }, 300)
+    }
+
+    private fun pollStopped(retries: Int = 8) {
+        if (!OverlayService.isRunning) {
+            btnStart.isEnabled = true
+            refreshStatus()
+            return
+        }
+        if (retries <= 0) {
+            Log.w(TAG, "pollStopped timeout, onDestroy not called, force reset isRunning")
+            OverlayService.isRunning = false
+            btnStart.isEnabled = true
+            refreshStatus()
+            return
+        }
+        uiHandler.postDelayed({ pollStopped(retries - 1) }, 300)
+    }
+
+    private fun refreshStatus() {
+        status.text = "悬浮窗权限：" + (if (Settings.canDrawOverlays(this)) "✅" else "❌") +
+            "\nShizuku：" + (if (ShizukuSource.isReady()) "✅ 已授权" else "❌ 未授权") +
+            "\n服务状态：" + (if (OverlayService.isRunning) "🟢 运行中" else "⚪ 已停止") +
+            "\n架构支持：" + Build.SUPPORTED_ABIS.take(2).joinToString(" / ")
+        btnStart.text = if (OverlayService.isRunning) "停止悬浮帧率" else "启动悬浮帧率"
+    }
+
+    private fun header(b: LinearLayout, t: String) =
+        b.addView(TextView(this).apply {
+            text = t
+            textSize = 15f
+            setPadding(0, 40, 0, 16)
+        })
+
+    private fun slider(
+        b: LinearLayout, label: String, min: Int, max: Int,
+        init: Int, fmt: (Int) -> String, on: (Int) -> Unit
+    ) {
+        val tv = TextView(this).apply { text = "$label：${fmt(init)}"; textSize = 14f }
+        b.addView(tv)
+        b.addView(
+            SeekBar(this).apply {
+                max = max - min
+                progress = init - min
+                setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                    override fun onProgressChanged(s: SeekBar?, p: Int, fromUser: Boolean) {
+                        if (!fromUser) return
+                        val v = p + min
+                        tv.text = "$label：${fmt(v)}"
+                        on(v)
+                    }
+
+                    override fun onStartTrackingTouch(s: SeekBar?) {}
+
+                    override fun onStopTrackingTouch(s: SeekBar?) {}
+                })
+            }
+        )
+    }
+
+    private fun switchRow(
+        b: LinearLayout, label: String, init: Boolean,
+        on: (Boolean) -> Unit
+    ) = b.addView(
+        Switch(this).apply {
+            text = label
+            isChecked = init
+            setOnCheckedChangeListener { _, c -> on(c) }
+        }
+    )
+
+    private fun colorRow(
+        b: LinearLayout, colors: List<Pair<String, Long>>,
+        on: (Long) -> Unit
+    ) {
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        colors.forEach { (name, argb) ->
+            val r = ((argb shr 16) and 0xFF).toInt()
+            val g = ((argb shr 8) and 0xFF).toInt()
+            val b = (argb and 0xFF).toInt()
+            val yiq = (r * 299 + g * 587 + b * 114) / 1000
+            row.addView(
+                TextView(this).apply {
+                    text = name
+                    textSize = 12f
+                    gravity = Gravity.CENTER
+                    setTextColor(if (yiq >= 128) Color.BLACK else Color.WHITE)
+                    background = GradientDrawable().apply {
+                        setColor(argb.toInt())
+                        cornerRadius = 24f
+                    }
+                    setOnClickListener { on(argb) }
+                },
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                    .apply { marginEnd = 8 }
+            )
+        }
+        b.addView(row)
+    }
+
+    private fun toast(m: String) = Toast.makeText(this, m, Toast.LENGTH_LONG).show()
 }
