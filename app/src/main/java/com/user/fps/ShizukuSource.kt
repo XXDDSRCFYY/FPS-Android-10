@@ -1,83 +1,83 @@
 package com.user.fps
 
+import android.content.ComponentName
 import android.content.Context
-import android.os.Binder
+import android.content.ServiceConnection
+import android.content.pm.PackageManager
+import android.os.IBinder
 import android.util.Log
-import java.io.InputStream
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import rikka.shizuku.Shizuku
 
-class FpsShizukuService(context: Context) : IFpsService.Stub() {
+object ShizukuSource {
 
-    private val TAG = "FpsShizukuService"
+    private const val TAG = "ShizukuSource"
 
-    private val allowedCmd = "dumpsys SurfaceFlinger --latency"
-    private val candidates = listOf("/system/bin/dumpsys", "dumpsys")
+    private val bindRequested = AtomicBoolean(false)
+    private val connected = AtomicBoolean(false)
 
-    private val expectedUid: Int = try {
-        context.packageManager.getPackageUid(context.packageName, 0)
+    @Volatile
+    private var svc: IFpsService? = null
+
+    private fun args(ctx: Context) = Shizuku.UserServiceArgs(
+        ComponentName(ctx, FpsShizukuService::class.java)
+    ).processNameSuffix("fps").version(1).debuggable(false)
+
+    private val conn = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName, binder: IBinder) {
+            if (bindRequested.get()) {
+                svc = IFpsService.Stub.asInterface(binder)
+                connected.set(true)
+                Log.i(TAG, "Shizuku user service connected")
+            } else {
+                Log.w(TAG, "ignored late onServiceConnected after unbind")
+            }
+        }
+
+        override fun onServiceDisconnected(name: ComponentName) {
+            connected.set(false)
+            svc = null
+            Log.w(TAG, "Shizuku user service disconnected")
+        }
+    }
+
+    fun isReady(): Boolean = try {
+        Shizuku.pingBinder() &&
+            Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
     } catch (e: Exception) {
-        -1
+        false
     }
 
-    private fun drain(stream: InputStream, into: StringBuilder): Thread = Thread {
+    val isBound: Boolean get() = connected.get()
+
+    fun bind(ctx: Context) {
+        if (!isReady()) return
+        if (!bindRequested.compareAndSet(false, true)) return
         try {
-            stream.bufferedReader().use { into.append(it.readText()) }
-        } catch (_: Exception) {
+            Shizuku.bindUserService(args(ctx.applicationContext), conn)
+        } catch (e: Exception) {
+            bindRequested.set(false)
+            Log.e(TAG, "bindUserService failed", e)
         }
-    }.apply { isDaemon = true }
-
-    private fun kill(p: Process) {
-        p.destroy()
-        if (p.isAlive) p.destroyForcibly()
     }
 
-    override fun runCommand(cmd: String): String {
-        if (cmd.trim() != allowedCmd) {
-            Log.w(TAG, "reject non-whitelisted command: $cmd")
-            return ""
+    fun unbind(ctx: Context) {
+        if (!bindRequested.compareAndSet(true, false)) return
+        connected.set(false)
+        try {
+            Shizuku.unbindUserService(args(ctx.applicationContext), conn, false)
+        } catch (e: Exception) {
+            Log.w(TAG, "unbindUserService: ${e.message}")
         }
-        val caller = Binder.getCallingUid()
-        if (expectedUid != -1 && caller != expectedUid)
-            Log.i(TAG, "callerUid=$caller != appUid=$expectedUid (forwarded by framework, allow)")
+    }
 
-        for (bin in candidates) {
-            val p: Process = try {
-                ProcessBuilder(bin, "SurfaceFlinger", "--latency").start()
-            } catch (e: Exception) {
-                Log.w(TAG, "$bin start failed: ${e.message}")
-                continue
-            }
-
-            val out = StringBuilder()
-            val err = StringBuilder()
-            val tOut = drain(p.inputStream, out).apply { start() }
-            val tErr = drain(p.errorStream, err).apply { start() }
-
-            val exited = try {
-                p.waitFor(1, TimeUnit.SECONDS)
-            } catch (e: InterruptedException) {
-                Thread.currentThread().interrupt()
-                kill(p)
-                tOut.join(200)
-                tErr.join(200)
-                return ""
-            }
-
-            if (!exited) {
-                Log.w(TAG, "$bin timed out")
-                kill(p)
-                tOut.join(200)
-                tErr.join(200)
-                continue
-            }
-
-            tOut.join(500)
-            tErr.join(500)
-            if (out.isBlank() && err.isNotBlank())
-                Log.w(TAG, "stderr: ${err.take(200)}")
-            kill(p)
-            return out.toString()
+    fun readLatency(): String? {
+        if (!connected.get()) return null
+        val s = svc ?: return null
+        return try {
+            s.runCommand("dumpsys SurfaceFlinger --latency")?.takeIf { it.isNotBlank() }
+        } catch (e: Exception) {
+            null
         }
-        return ""
     }
 }
