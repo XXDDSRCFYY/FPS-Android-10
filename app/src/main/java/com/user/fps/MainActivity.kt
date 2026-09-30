@@ -1,4 +1,4 @@
-package com.user.fps
+*package com.user.fps
 
 import android.app.*
 import android.content.Intent
