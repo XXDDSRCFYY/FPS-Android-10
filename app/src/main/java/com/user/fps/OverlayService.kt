@@ -73,36 +73,29 @@ class OverlayService : Service(), DisplayManager.DisplayListener,
                     var jank = -1
                     var src = Src.FAIL
                     try {
-    when {
-        !ShizukuSource.isBound -> {
-            src = Src.BINDING
-            ShizukuSource.bind(applicationContext)
-        }
-        else -> {
-            val raw = ShizukuSource.readLatency()
-            when {
-                raw.isNullOrBlank() -> src = Src.FAIL
-                else -> {
-                    val st = FpsEngine.parseLatency(raw)
-                    if (st.isEmpty()) {
-                        src = Src.EMPTY
-                    } else {
-                        fps = FpsEngine.fpsOf(st).roundToInt()
-                        jank = FpsEngine.jankOf(st, hz)
-                        src = Src.OK
-                    }
-                }
-            }
-        }
-    }
-} catch (e: Exception) {
-    e.printStackTrace()
-} finally {
-    sampling.set(false)
-}
-                    main.post { render(buildText(fps, jank, src)) }
-                    }
-                    catch (e: Exception) {
+                        when {
+                            !ShizukuSource.isBound -> {
+                                src = Src.BINDING
+                                ShizukuSource.bind(applicationContext)
+                            }
+                            else -> {
+                                val raw = ShizukuSource.readLatency()
+                                when {
+                                    raw.isNullOrBlank() -> src = Src.FAIL
+                                    else -> {
+                                        val st = FpsEngine.parseLatency(raw)
+                                        if (st.isEmpty()) {
+                                            src = Src.EMPTY
+                                        } else {
+                                            fps = FpsEngine.fpsOf(st).roundToInt()
+                                            jank = FpsEngine.jankOf(st, hz)
+                                            src = Src.OK
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
                         e.printStackTrace()
                     } finally {
                         sampling.set(false)
@@ -119,7 +112,7 @@ class OverlayService : Service(), DisplayManager.DisplayListener,
             main.postAtTime(this, next)
         }
     }
-    private fun buildText(fps: Int, jank: Int, src: Src): String {
+        private fun buildText(fps: Int, jank: Int, src: Src): String {
         val lines = mutableListOf<String>()
         lines += when {
             src == Src.DENIED -> "未授权 Shizuku"
@@ -154,7 +147,7 @@ class OverlayService : Service(), DisplayManager.DisplayListener,
         ShizukuSource.bind(applicationContext)
         addOverlay()
         main.post(tickRunnable)
-        }
+    }
 
     override fun onStartCommand(i: Intent?, f: Int, s: Int): Int = START_STICKY
 
@@ -211,7 +204,7 @@ class OverlayService : Service(), DisplayManager.DisplayListener,
             Toast.makeText(applicationContext,
                 "悬浮窗创建失败，请检查权限", Toast.LENGTH_SHORT).show()
             stopSelf()
-            }
+        }
     }
 
     private fun applyStyle() {
